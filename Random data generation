@@ -1,0 +1,181 @@
+import pandas as pd
+import numpy as np
+import random
+from datetime import datetime, timedelta
+
+# Set seed
+np.random.seed(42)
+random.seed(42)
+
+num_patients = 500  
+num_sites = 15
+base_today = datetime(2026, 8, 12)
+
+# Global geographic dictionary
+regions_countries = {
+    "NA": ["United States", "Canada"],
+    "EMEA": ["Germany", "United Kingdom", "France", "Spain", "Poland"],
+    "APAC": ["Japan", "Australia", "South Korea", "India"],
+    "LATAM": ["Brazil", "Argentina", "Mexico", "Colombia"]
+}
+
+# --- TABLE 1: SITES DIMENSION (dim_sites) ---
+site_ids = [f"SITE-{i:04d}" for i in range(1, num_sites + 1)]
+protocols = [f"PROT-{random.randint(100, 103)}" for _ in range(num_sites)]
+regions = [random.choice(list(regions_countries.keys())) for _ in range(num_sites)]
+countries = [random.choice(regions_countries[reg]) for reg in regions]
+phases = [random.choice(["Phase II", "Phase III"]) for _ in range(num_sites)]
+targets = [random.randint(20, 50) for _ in range(num_sites)]
+inspection_dates = [base_today - timedelta(days=int(np.random.randint(10, 365))) for _ in range(num_sites)]
+
+initiation_dates = []
+target_final_dates = []
+
+for _ in range(num_sites):
+    # 1. Calculate a random number of days between 0 and 3 years (3 * 365 = 1095 days)
+    random_days_ago = random.randint(0, 1095)
+    
+    # 2. Subtract those days from your base_today variable to get the initiation date
+    init_date = base_today - timedelta(days=random_days_ago)
+    initiation_dates.append(init_date)
+    
+    # 3. Add duration (1 to 3 years)
+    duration_days = random.randint(365, 365 * 3)
+    
+    # 4. Add the duration to the initiation date to find the target final date
+    target_final_date = init_date + timedelta(days=duration_days)
+    target_final_dates.append(target_final_date)
+
+
+dim_sites = pd.DataFrame({
+    "SiteID": site_ids,
+    "ProtocolID": protocols,
+    "Country": countries,
+    "Region": regions,
+    "TrialPhase": phases,
+    "TargetEnrollment": targets,
+    "LastInspectionDate": [d.strftime('%Y-%m-%d') for d in inspection_dates],
+    "Initiation_Date": initiation_dates,
+    "Target_Final_Date": target_final_dates,
+})
+
+# --- TABLE 2: PATIENTS DIMENSION (dim_patients) ---
+patient_ids = [f"SUBJ-{1000+i}" for i in range(num_patients)]
+assigned_sites = [random.choice(site_ids) for _ in range(num_patients)]
+genders = np.random.choice(["Male", "Female", "Other"], size=num_patients, p=[0.48, 0.49, 0.03])
+ages = np.random.randint(18, 75, size=num_patients)
+races = np.random.choice(["White", "Black", "Asian", "Hispanic", "Other"], size=num_patients, p=[0.55, 0.18, 0.12, 0.12, 0.03])
+dispositions = np.random.choice(["Completed", "Active", "Screen Failure", "Withdrawn"], size=num_patients, p=[0.45, 0.30, 0.15, 0.10])
+
+start_date = datetime(2026, 1, 1)
+screening_dates = [start_date + timedelta(days=int(np.random.randint(0, 150))) for _ in range(num_patients)]
+
+randomization_dates, completion_dates, sf_reasons, wd_reasons = [], [], [], []
+sf_pool = ["Inclusion criteria not met", "Exclusion criteria met", "Lab abnormality", "Consent withdrawn"]
+wd_pool = ["Adverse Event", "Lack of Efficacy", "Lost to Follow-up", "Physician Decision"]
+
+for i in range(num_patients):
+    scr_dt = screening_dates[i]
+    disp = dispositions[i]
+    
+    if disp == "Screen Failure":
+        randomization_dates.append(None)
+        completion_dates.append(None)
+        sf_reasons.append(random.choice(sf_pool))
+        wd_reasons.append(None)
+    else:
+        rand_dt = scr_dt + timedelta(days=int(np.random.randint(1, 15)))
+        randomization_dates.append(rand_dt)
+        sf_reasons.append(None)
+        
+        if disp == "Completed":
+            completion_dates.append(rand_dt + timedelta(days=90))
+            wd_reasons.append(None)
+        elif disp == "Withdrawn":
+            completion_dates.append(rand_dt + timedelta(days=int(np.random.randint(5, 80))))
+            wd_reasons.append(random.choice(wd_pool))
+        else:
+            completion_dates.append(None)
+            wd_reasons.append(None)
+
+dim_patients = pd.DataFrame({
+    "PatientID": patient_ids,
+    "SiteID": assigned_sites,
+    "Age": ages,
+    "Gender": genders,
+    "Race": races,
+    "ScreeningDate": [d.strftime('%Y-%m-%d') for d in screening_dates],
+    "RandomizationDate": [d.strftime('%Y-%m-%d') if d else None for d in randomization_dates],
+    "Disposition": dispositions,
+    "ScreenFailureReason": sf_reasons,
+    "WithdrawalReason": wd_reasons,
+    "EndTrialDate": [d.strftime('%Y-%m-%d') if d else None for d in completion_dates]
+})
+
+# Dynamically calculate actual enrollment for the dimension mapping step
+enrolled_counts = dim_patients[dim_patients["RandomizationDate"].notnull()].groupby("SiteID").size().to_dict()
+dim_sites["ActualEnrollment"] = dim_sites["SiteID"].map(enrolled_counts).fillna(0).astype(int)
+
+# --- TABLE 3: CLINICAL EVENTS FACT (fact_clinical_events) ---
+event_rows = []
+event_id_counter = 1
+
+for idx, row in dim_patients.iterrows():
+    p_id = row["PatientID"]
+    s_id = row["SiteID"]
+    if row["Disposition"] == "Screen Failure":
+        continue 
+        
+    rand_dt = datetime.strptime(row["RandomizationDate"], '%Y-%m-%d')
+    
+    # Securely check if EndTrialDate is a valid string, otherwise fall back to base_today
+    if isinstance(row["EndTrialDate"], str) and row["EndTrialDate"].strip():
+        end_dt = datetime.strptime(row["EndTrialDate"], '%Y-%m-%d')
+    else:
+        end_dt = base_today
+        
+    days_in_trial = max(2, (end_dt - rand_dt).days)
+    
+    # Generate Adverse Events
+    for _ in range(np.random.choice([0, 1, 2], p=[0.6, 0.3, 0.1])):
+        ae_date = rand_dt + timedelta(days=int(np.random.randint(1, days_in_trial)))
+        is_sae = np.random.choice(["Yes", "No"], p=[0.15, 0.85])
+        event_rows.append({
+            "EventID": f"EVT-{event_id_counter:04d}", "PatientID": p_id, "SiteID": s_id,
+            "EventType": "Adverse Event", "EventDate": ae_date.strftime('%Y-%m-%d'),
+            "Details": np.random.choice(["Headache", "Nausea", "Dizziness", "Fatigue"]),
+            "IsSerious": is_sae, "QueryResolutionDays": None
+        })
+        event_id_counter += 1
+
+    # Generate Protocol Deviations
+    for _ in range(np.random.choice([0, 1], p=[0.8, 0.2])):
+        pd_date = rand_dt + timedelta(days=int(np.random.randint(1, days_in_trial)))
+        event_rows.append({
+            "EventID": f"EVT-{event_id_counter:04d}", "PatientID": p_id, "SiteID": s_id,
+            "EventType": "Protocol Deviation", "EventDate": pd_date.strftime('%Y-%m-%d'),
+            "Details": np.random.choice(["Consent Process", "Missed Lab", "Out of Window Visit"]),
+            "IsSerious": "No", "QueryResolutionDays": None
+        })
+        event_id_counter += 1
+
+    # Generate Queries
+    for _ in range(np.random.choice([0, 1, 2], p=[0.4, 0.5, 0.1])):
+        q_date = rand_dt + timedelta(days=int(np.random.randint(1, days_in_trial)))
+        event_rows.append({
+            "EventID": f"EVT-{event_id_counter:04d}", "PatientID": p_id, "SiteID": s_id,
+            "EventType": "Data Query", "EventDate": q_date.strftime('%Y-%m-%d'),
+            "Details": np.random.choice(["Missing height", "Dose inconsistency", "Lab unit error"]),
+            "IsSerious": "No", "QueryResolutionDays": int(np.random.exponential(scale=5)) + 1
+        })
+        event_id_counter += 1
+
+fact_clinical_events = pd.DataFrame(event_rows)
+
+# Save scripts to CSV files
+dim_sites.to_csv("dim_sites.csv", index=False)
+dim_patients.to_csv("dim_patients.csv", index=False)
+fact_clinical_events.to_csv("fact_clinical_events.csv", index=False)
+
+
+print("Dataset generated successfully!")

@@ -1,6 +1,6 @@
 Thanks for visiting my page!
 
-This repository's aim is to showcase my understanding of Power BI and DAX functions for data manipulation and interactive reporting. 
+This repository aims to showcase my understanding of Power BI and DAX functions for data manipulation and interactive reporting. 
 Disclaimer: none of this data is originated from real clinical research, therefore there is no conflict of interest. Some of the content of this repository
 was made using the help of AI in code formulations.
 The whole purpose is educational and/or for general information. 

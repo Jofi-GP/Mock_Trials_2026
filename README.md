@@ -5,8 +5,8 @@ Disclaimer: none of this data is originated from real clinical research, therefo
 was made using the help of AI in code formulations.
 The whole purpose is educational and/or for general information. 
 
-Requirements: Power BI for Windows 10 or 11 installed (for opening the .pbix file)
-              python notebooks (I used Jupyter) to generate the tables.
+Requirements: Power BI for Windows 10 or 11 installed (for opening the .pbix file)  
+              python executable notebooks (I used Jupyter) to generate the tables.
 
 1) Created Random data for clinical trials: 3 table dimensions: dim_patients, dim_sites, fact_clinical_events
 2) Imported CVS files into Power BI

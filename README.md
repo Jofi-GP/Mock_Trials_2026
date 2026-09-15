@@ -1,6 +1,6 @@
 ## Clinical Trials Mocks 2026
 
-This repository aims to showcase my understanding of Power BI and DAX functions for data manipulation and interactive reporting in the context of clinical trial datasets. 
+This repository aims to showcase my understanding of Power BI and DAX functions for data manipulation and interactive reporting in the context of clinical trial datasets. Also included an Excel with pivot tables and other visualizations.
 No conflict of interest. Some of the content of this repository was made using the help of AI to optimize coding.
 The whole purpose is educational and/or for general information. 
 
